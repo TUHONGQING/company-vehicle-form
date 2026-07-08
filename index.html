@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>公司车辆使用登记</title>
+    <!-- QR Code -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+            background-color: #121212;
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding-bottom: 90px;
+        }
+
+        /* === 配置提示横幅（首次使用） === */
+        .config-banner {
+            background: linear-gradient(135deg, #c41e3a 0%, #8b0000 100%);
+            color: #fff; padding: 12px 16px; font-size: 13px; line-height: 1.6;
+            text-align: center;
+        }
+        .config-banner a { color: #ffdd88; text-decoration: underline; }
+        .config-banner button {
+            background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4);
+            color: #fff; padding: 3px 14px; border-radius: 10px; cursor: pointer; margin-left: 8px;
+            font-size: 12px;
+        }
+
+        /* === 顶部导航栏 === */
+        .header {
+            background-color: #000; padding: 12px 16px; display: flex;
+            align-items: center; justify-content: center; position: relative;
+            border-bottom: 1px solid #222;
+        }
+        .header h1 {
+            font-size: 16px; font-weight: 500; color: #fff;
+            max-width: 75%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .header-icons { position: absolute; right: 16px; display: flex; gap: 18px; color: #aaa; font-size: 18px; }
+
+        /* === 主内容区 === */
+        .container { padding: 24px 20px; max-width: 480px; margin: 0 auto; }
+
+        /* 模式标题区 */
+        .mode-banner {
+            text-align: center; margin-bottom: 28px; padding: 20px 16px;
+            background: linear-gradient(135deg, #1a2332 0%, #0d1117 100%);
+            border-radius: 14px; border: 1px solid #1e3a5f;
+        }
+        .mode-title { font-size: 22px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+        .mode-subtitle { font-size: 13px; color: #6b8299; }
+        .mode-badge {
+            display: inline-block; padding: 4px 14px; border-radius: 20px;
+            font-size: 13px; font-weight: 600; margin-top: 12px;
+        }
+        .mode-badge.checkin {
+            background-color: rgba(74,158,255,0.15); color: #4a9eff;
+            border: 1px solid rgba(74,158,255,0.3);
+        }
+        .mode-badge.checkout {
+            background-color: rgba(255,170,0,0.12); color: #ffaa00;
+            border: 1px solid rgba(255,170,0,0.25);
+        }
+
+        /* 加载状态 */
+        .loading-bar {
+            display: none; background: #1c1c1e; border-radius: 8px;
+            padding: 24px; text-align: center; color: #666; font-size: 14px;
+        }
+        .loading-bar.show { display: block; }
+        .spinner {
+            display: inline-block; width: 28px; height: 28px; border: 3px solid #333;
+            border-top-color: #4a9eff; border-radius: 50%;
+            animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 10px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* 错误提示 */
+        .error-bar {
+            display: none; background: rgba(196,30,58,0.15); border: 1px solid rgba(196,30,58,0.3);
+            border-radius: 8px; padding: 12px 16px; color: #f55; font-size: 13px;
+            margin-bottom: 18px; line-height: 1.5;
+        }
+        .error-bar.show { display: block; }
+
+        /* === 表单字段 === */
+        .form-group {
+            margin-bottom: 20px; background-color: #1c1c1e;
+            border-radius: 10px; padding: 16px; border: 1px solid #2a2a2c;
+        }
+        .field-label {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 15px; font-weight: 500; color: #fff; margin-bottom: 10px;
+        }
+        .field-num { color: #4a9eff; font-weight: 700; font-size: 14px; }
+        .field-required { color: #ff4d4f; font-size: 13px; }
+        .field-hint { font-size: 12px; color: #555; margin-top: 6px; }
+
+        .form-input, .form-select {
+            width: 100%; height: 46px; background-color: #121212;
+            border: 1px solid #333; border-radius: 8px;
+            padding: 0 14px; font-size: 15px; color: #e0e0e0;
+            outline: none; transition: all 0.2s;
+        }
+        .form-input:focus, .form-select:focus {
+            border-color: #4a9eff; box-shadow: 0 0 0 2px rgba(74,158,255,0.15);
+        }
+        .form-input::placeholder { color: #444; }
+        .form-select {
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23777' d='M6 8L0 0h12z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: right 14px center;
+            cursor: pointer; color: #e0e0e0;
+        }
+        .form-select option { background-color: #2a2a2a; color: #e0e0e0; }
+        .form-textarea {
+            width: 100%; min-height: 64px; background-color: #121212;
+            border: 1px solid #333; border-radius: 8px;
+            padding: 12px 14px; font-size: 15px; color: #e0e0e0;
+            outline: none; transition: all 0.2s; resize: vertical; font-family: inherit;
+        }
+        .form-textarea:focus { border-color: #4a9eff; box-shadow: 0 0 0 2px rgba(74,158,255,0.15); }
+        .form-textarea::placeholder { color: #444; }
+
+        .datetime-wrap { position: relative; }
+        .datetime-icon {
+            position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+            color: #666; font-size: 17px; pointer-events: none;
+        }
+        .form-datetime {
+            width: 100%; height: 46px; background-color: #121212;
+            border: 1px solid #333; border-radius: 8px;
+            padding: 0 14px 0 40px; font-size: 15px; color: #e0e0e0;
+            outline: none; appearance: none;
+        }
+        .form-datetime:focus { border-color: #4a9eff; box-shadow: 0 0 0 2px rgba(74,158,255,0.15); }
+
+        /* 当前在用车辆提示（还车模式） */
+        .active-vehicle-info {
+            background-color: rgba(255,170,0,0.08); border: 1px solid rgba(255,170,0,0.2);
+            border-radius: 8px; padding: 12px 14px; margin-bottom: 16px;
+            font-size: 13px; color: #ccaa00; line-height: 1.6;
+        }
+        .active-vehicle-info strong { color: #ffdd44; }
+
+        /* === 提交按钮 === */
+        .submit-bar {
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background: linear-gradient(to top, #121212 70%, transparent);
+            padding: 16px 20px; padding-bottom: calc(16px + env(safe-area-inset-bottom));
+        }
+        .submit-btn {
+            width: 100%; height: 48px; border: none; border-radius: 24px;
+            font-size: 17px; font-weight: 600; cursor: pointer;
+            transition: all 0.2s; letter-spacing: 1px;
+        }
+        .submit-btn.checkin {
+            background-color: #4a9eff; color: #fff;
+            box-shadow: 0 4px 18px rgba(74,158,255,0.35);
+        }
+        .submit-btn.checkin:hover { background-color: #3a8eef; }
+        .submit-btn.checkout {
+            background-color: #ffaa00; color: #121212;
+            box-shadow: 0 4px 18px rgba(255,170,0,0.3);
+        }
+        .submit-btn.checkout:hover { background-color: #ee9900; }
+        .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* === 成功弹窗 === */
+        .modal-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.85); z-index: 999;
+            justify-content: center; align-items: center;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal-box {
+            text-align: center; padding: 36px 28px 28px;
+            background-color: #1c1c1e; border-radius: 18px; width: 300px;
+            border: 1px solid #2a2a2c;
+        }
+        .modal-icon { font-size: 52px; margin-bottom: 14px; }
+        .modal-title { font-size: 18px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+        .modal-msg { font-size: 14px; color: #888; margin-bottom: 22px; line-height: 1.5; }
+        .modal-detail {
+            background-color: #121212; border-radius: 8px; padding: 12px;
+            font-size: 13px; color: #aaa; text-align: left; margin-bottom: 20px;
+            line-height: 1.7;
+        }
+        .modal-detail span { color: #ddd; }
+        .modal-close-btn {
+            background-color: #4a9eff; color: #fff; border: none;
+            padding: 10px 32px; border-radius: 20px; font-size: 15px;
+            cursor: pointer; font-weight: 500;
+        }
+
+        /* ========== 管理面板 ========== */
+        .admin-toggle {
+            position: fixed; top: 12px; right: 56px;
+            background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1);
+            color: #888; width: 32px; height: 32px; border-radius: 8px;
+            font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s; z-index: 10;
+        }
+        .admin-toggle:hover { background: rgba(255,255,255,0.15); color: #ccc; }
+
+        .admin-panel { display: none; position: fixed; inset: 0; background: #121212; z-index: 900; overflow-y: auto; padding-bottom: 40px; }
+        .admin-panel.show { display: block; }
+        .admin-header {
+            background-color: #000; padding: 14px 20px; display: flex; align-items: center; gap: 12px;
+            border-bottom: 1px solid #222; position: sticky; top: 0; z-index: 10;
+        }
+        .admin-back { background: none; border: none; color: #4a9eff; font-size: 20px; cursor: pointer; padding: 4px; }
+        .admin-header h2 { font-size: 17px; font-weight: 600; color: #fff; }
+
+        .admin-section { padding: 20px; max-width: 500px; margin: 0 auto; }
+        .admin-section h3 {
+            font-size: 15px; font-weight: 600; color: #fff; margin-bottom: 14px;
+            display: flex; align-items: center; gap: 8px;
+        }
+
+        /* 二维码区域 */
+        .qr-container {
+            background-color: #fff; border-radius: 14px; padding: 24px;
+            text-align: center; margin-bottom: 28px;
+        }
+        .qr-container canvas { max-width: 220px; border-radius: 8px; }
+        .qr-hint { font-size: 12px; color: #666; margin-top: 12px; }
+        .url-display {
+            background: #f0f0f0; border-radius: 6px; padding: 8px 12px;
+            margin-top: 10px; font-size: 11px; color: #444; word-break: break-all;
+        }
+
+        /* 统计卡片 */
+        .stats-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 24px; }
+        .stat-card {
+            background-color: #1c1c1e; border: 1px solid #2a2a2c;
+            border-radius: 10px; padding: 14px 10px; text-align: center;
+        }
+        .stat-num { font-size: 24px; font-weight: 700; color: #4a9eff; }
+        .stat-num.warn { color: #ffaa00; }
+        .stat-num.ok { color: #50c878; }
+        .stat-label { font-size: 11px; color: #666; margin-top: 4px; }
+
+        /* 记录列表 */
+        .record-list { display: flex; flex-direction: column; gap: 10px; }
+        .record-item {
+            background-color: #1c1c1e; border: 1px solid #2a2a2c;
+            border-radius: 10px; padding: 14px 16px;
+        }
+        .record-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .record-driver { font-size: 15px; font-weight: 600; color: #fff; }
+        .record-status {
+            font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600;
+        }
+        .status-active { background: rgba(74,158,255,0.15); color: #4a9eff; }
+        .status-done { background: rgba(80,200,120,0.15); color: #50c878; }
+        .record-info { font-size: 13px; color: #888; line-height: 1.7; }
+        .record-info span { color: #bbb; }
+
+        .empty-tip { text-align: center; padding: 40px 0; color: #444; font-size: 14px; }
+
+        .export-btn {
+            width: 100%; height: 42px; background-color: #1c1c1e; border: 1px solid #333;
+            border-radius: 10px; color: #aaa; font-size: 14px; cursor: pointer;
+            transition: all 0.2s; margin-top: 16px;
+        }
+        .export-btn:hover { border-color: #4a9eff; color: #4a9eff; }
+        .switch-mode-btn {
+            display: inline-block; margin-top: 16px; padding: 8px 20px;
+            background: none; border: 1px solid #333; border-radius: 20px;
+            color: #888; font-size: 13px; cursor: pointer; transition: all 0.2s;
+        }
+        .switch-mode-btn:hover { border-color: #4a9eff; color: #4a9eff; }
+
+        /* 连接状态指示器 */
+        .conn-status {
+            display: inline-flex; align-items: center; gap: 5px;
+            font-size: 12px; padding: 3px 10px; border-radius: 10px;
+        }
+        .conn-status.connected { background: rgba(80,200,120,0.12); color: #50c878; }
+        .conn-status.disconnected { background: rgba(255,77,79,0.12); color: #ff4d4f; }
+        .conn-dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: currentColor;
+        }
+    </style>
+</head>
+<body>
+
+<!-- 配置提示（未配置时显示） -->
+<div class="config-banner" id="configBanner" style="display:none;">
+    ⚠️ 未配置 Supabase 连接。数据将仅保存在本设备本地。
+    请在代码中设置 SUPABASE_URL 和 SUPABASE_KEY，或点击
+    <button onclick="openConfig()">配置</button>
+</div>
+
+<!-- 管理面板入口 -->
+<button class="admin-toggle" onclick="openAdmin()" title="管理面板">&#9881;</button>
+
+<!-- 顶部导航 -->
+<div class="header">
+    <h1>公司车辆使用登记</h1>
+    <div class="header-icons"><span>&#128100;</span></div>
+</div>
+
+<!-- 主表单区 -->
+<div class="container" id="mainFormArea">
+
+    <!-- 模式标题 -->
+    <div class="mode-banner" id="modeBanner">
+        <div class="mode-title" id="modeTitle">公司车辆登记</div>
+        <div class="mode-subtitle" id="modeSubtitle">扫码填写信息，快速完成登记</div>
+        <div class="mode-badge checkin" id="modeBadge">🚗 登车</div>
+    </div>
+
+    <!-- 云连接状态 -->
+    <div style="text-align:center;margin-bottom:16px;" id="connStatusWrap">
+        <span class="conn-status disconnected" id="connStatus"><span class="conn-dot"></span>未连接云端</span>
+    </div>
+
+    <!-- 还车时显示当前用车信息 -->
+    <div class="active-vehicle-info" id="activeInfo" style="display:none;"></div>
+
+    <!-- 加载中 -->
+    <div class="loading-bar show" id="loadingBar">
+        <span class="spinner"></span> 正在连接...
+    </div>
+
+    <!-- 错误提示 -->
+    <div class="error-bar" id="errorBar"></div>
+
+    <!-- 表单 -->
+    <div id="formFields" style="opacity:0.3;pointer-events:none;">
+        <div class="form-group">
+            <div class="field-label">
+                <span class="field-num">01</span><span id="labelName">司机姓名</span>
+                <span class="field-required">*</span>
+            </div>
+            <input type="text" class="form-input" id="inputName" placeholder="请输入姓名" autocomplete="off">
+        </div>
+
+        <div class="form-group" id="vehicleGroup">
+            <div class="field-label">
+                <span class="field-num">02</span><span id="labelVehicle">选择车辆</span>
+                <span class="field-required">*</span>
+            </div>
+            <select class="form-select" id="selectVehicle">
+                <option value="">请选择车辆</option>
+                <option value="car1">🚗 1号车（轿车）·粤BH23T8</option>
+                <option value="car2">🚐 2号车（商务车）·粤BV8A23</option>
+            </select>
+            <div class="field-hint">公司共2辆车，请选择本次使用的车辆</div>
+        </div>
+
+        <div class="form-group">
+            <div class="field-label">
+                <span class="field-num">03</span><span id="labelTime">时间</span>
+                <span class="field-required">*</span>
+            </div>
+            <div class="datetime-wrap">
+                <span class="datetime-icon">&#128338;</span>
+                <input type="datetime-local" class="form-datetime" id="inputTime">
+            </div>
+            <div class="field-hint" id="timeHint"></div>
+        </div>
+
+        <div class="form-group" id="mileageGroup" style="display:none;">
+            <div class="field-label">
+                <span class="field-num">04</span><span id="labelMileage">还车里程数</span>
+                <span class="field-required">*</span>
+            </div>
+            <input type="number" class="form-input" id="inputMileage" placeholder="请输入还车时里程表读数（km）" inputmode="numeric" min="0" step="1" autocomplete="off">
+            <div class="field-hint">填写本次用车结束时的里程表读数，用于统计行驶里程</div>
+        </div>
+
+        <div class="form-group" id="reasonGroup" style="display:none;">
+            <div class="field-label">
+                <span class="field-num">05</span><span id="labelReason">申请原因</span>
+                <span class="field-required">*</span>
+            </div>
+            <textarea class="form-textarea" id="inputReason" placeholder="例如：前往客户A公司开会"></textarea>
+            <div class="field-hint">填写目的地，如果还车晚附上原因</div>
+        </div>
+    </div>
+</div>
+
+<!-- 提交按钮 -->
+<div class="submit-bar">
+    <button class="submit-btn checkin" id="submitBtn" onclick="handleSubmit()" disabled>确认登车</button>
+</div>
+
+<!-- 成功弹窗 -->
+<div class="modal-overlay" id="successModal">
+    <div class="modal-box">
+        <div class="modal-icon" id="modalIcon">&#9989;</div>
+        <div class="modal-title" id="modalTitle">登车成功！</div>
+        <div class="modal-msg" id="modalMsg">请安全驾驶，注意行车规范。</div>
+        <div class="modal-detail" id="modalDetail"></div>
+        <button class="modal-close-btn" onclick="closeModal()">好的</button>
+    </div>
+</div>
+
+<!-- ========== 管理面板 ========== -->
+<div class="admin-panel" id="adminPanel">
+    <div class="admin-header">
+        <button class="admin-back" onclick="closeAdmin()">&#8592;</button>
+        <h2>&#128203; 用车记录管理</h2>
+    </div>
+    <div class="admin-section">
+        <h3>&#128241; 扫码二维码</h3>
+        <div class="qr-container" id="qrCodeArea">
+            <p style="color:#888;font-size:13px;">正在生成...</p>
+        </div>
+
+        <h3>&#128202; 数据概览</h3>
+        <div class="stats-row" id="statsRow">
+            <div class="stat-card"><div class="stat-num" id="statTotal">-</div><div class="stat-label">总记录</div></div>
+            <div class="stat-card"><div class="stat-num warn" id="statActive">-</div><div class="stat-label">行驶中</div></div>
+            <div class="stat-card"><div class="stat-num ok" id="statDone">-</div><div class="stat-label">已归还</div></div>
+        </div>
+
+        <h3>&#128196; 全部记录 <span class="conn-status disconnected" id="adminConnStatus" style="margin-left:auto;font-size:11px;"><span class="conn-dot"></span></span></h3>
+        <div class="record-list" id="recordList">
+            <div class="empty-tip">正在加载...</div>
+        </div>
+
+        <button class="export-btn" onclick="exportData()">&#128190; 导出数据为JSON</button>
+        <button class="export-btn" onclick="refreshRecords()" style="margin-top:8px;">&#128260; 刷新云端数据</button>
+        <div style="text-align:center;">
+            <button class="switch-mode-btn" onclick="closeAdmin()">返回登记页面</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ====================================================================
+// ⬇️⬇️⬇️ 在这里填入你的 Supabase 配置 ⬇️⬇️⬇️
+//
+// 1. 登录 https://supabase.com → New Project
+// 2. 项目创建完成后，进入 Settings → API
+// 3. 复制 Project URL 和 anon public key 到下面
+//
+// 然后在 Supabase SQL Editor 中运行本文件末尾的建表 SQL
+// ====================================================================
+
+const SUPABASE_URL = 'https://rdaequtyzxixgcpggcft.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_554IA1KA6fJEc8cyn8DWPQ_cVUoDdtp';
+
+// 表名（SQL 中创建的表名需与此一致）
+const TABLE_NAME = 'vehicle_records';
+
+// 车辆映射
+const VEHICLES = { car1: '🚗 1号车（轿车）·粤BH23T8', car2: '🚐 2号车（商务车）·粤BV8A23' };
+
+// ====================================================================
+// 以上是唯一需要修改的地方，其余无需改动
+// ====================================================================
+
+let isCloudConnected = false;
+
+// ==================== Supabase 连接 ====================
+const API_HEADERS = {
+    'apikey': SUPABASE_KEY,
+    'Authorization': `Bearer ${SUPABASE_KEY}`,
+    'Content-Type': 'application/json'
+};
+
+async function initSupabase() {
+    const connStatus = document.getElementById('connStatus');
+
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
+        document.getElementById('configBanner').style.display = 'block';
+        finishInit();
+        return;
+    }
+
+    try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?select=id&limit=1`, {
+            method: 'GET',
+            headers: API_HEADERS
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(`HTTP ${res.status}: ${err.message || '请求失败'}`);
+        }
+
+        isCloudConnected = true;
+        connStatus.className = 'conn-status connected';
+        connStatus.innerHTML = '<span class="conn-dot"></span>云端已连接';
+        document.getElementById('adminConnStatus').className = 'conn-status connected';
+        document.getElementById('adminConnStatus').innerHTML = '<span class="conn-dot"></span>';
+    } catch (err) {
+        console.error('Supabase 连接失败:', err);
+        isCloudConnected = false;
+        showError(`云端连接失败: ${err.message || '未知错误'}<br>数据将保存到本机本地。`);
+        connStatus.className = 'conn-status disconnected';
+        connStatus.innerHTML = '<span class="conn-dot"></span>已降级为本地模式';
+    }
+
+    finishInit();
+}
+
+function finishInit() {
+    document.getElementById('loadingBar').classList.remove('show');
+    document.getElementById('formFields').style.opacity = '1';
+    document.getElementById('formFields').style.pointerEvents = 'auto';
+    document.getElementById('submitBtn').disabled = false;
+    setDefaultTime();
+}
+
+function showError(msg) {
+    const el = document.getElementById('errorBar');
+    el.innerHTML = msg + ' <button onclick="this.parentElement.style.display=\'none\'" style="background:none;border:none;color:#f55;font-size:16px;cursor:pointer;">&times;</button>';
+    el.classList.add('show');
+}
+
+
+// ==================== 数据操作层 ====================
+
+/** 从云端查询司机是否有未归还的车辆 */
+async function queryActiveRecord(driverName) {
+    if (!isCloudConnected || !driverName) return null;
+    try {
+        const params = new URLSearchParams();
+        params.set('select', '*');
+        params.set('driver_name', `eq.${driverName}`);
+        params.set('return_time', 'is.null');
+        params.set('order', 'depart_time.desc');
+        params.set('limit', '1');
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?${params.toString()}`, {
+            headers: API_HEADERS
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        return data && data.length > 0 ? data[0] : null;
+    } catch (e) { return null; }
+}
+
+/** 插入登车记录 */
+async function insertCheckin(record) {
+    if (!isCloudConnected) return fallbackSave(record);
+    try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}`, {
+            method: 'POST',
+            headers: {
+                ...API_HEADERS,
+                'Prefer': 'return=representation'
+            },
+            body: JSON.stringify({
+                driver_name: record.driverName,
+                vehicle: record.vehicle,
+                vehicle_label: record.vehicleLabel,
+                depart_time: record.departTime
+            })
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            alert('云端写入失败: ' + (err.message || `HTTP ${res.status}`));
+            return false;
+        }
+        return true;
+    } catch (e) {
+        alert('网络错误: ' + e.message);
+        return false;
+    }
+}
+
+/** 更新还车时间 */
+async function updateCheckout(id, returnTime, mileage, reason) {
+    if (!isCloudConnected) return fallbackCheckout(id, returnTime, mileage, reason);
+    try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?id=eq.${id}`, {
+            method: 'PATCH',
+            headers: {
+                ...API_HEADERS,
+                'Prefer': 'return=minimal'
+            },
+            body: JSON.stringify({ return_time: returnTime, mileage: mileage, reason: reason })
+        });
+        return res.ok;
+    } catch (e) { return false; }
+}
+
+/** 从云端获取所有记录 */
+async function fetchAllRecords() {
+    if (!isCloudConnected) {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    }
+    try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?select=*&order=created_at.desc`, {
+            headers: API_HEADERS
+        });
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data || [];
+    } catch (e) { return []; }
+}
+
+const STORAGE_KEY = 'company_vehicle_records_local'; // 本地降级用
+
+
+// ==================== 本地降级方案 ====================
+function getLocalRecords() {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+}
+function saveLocalRecords(records) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+}
+function getLocalActive(name) {
+    return getLocalRecords().find(r => r.driver_name === name && !r.return_time) || null;
+}
+
+function fallbackSave(record) {
+    const records = getLocalRecords();
+    records.push({
+        ...record,
+        id: Date.now(),
+        created_at: new Date().toISOString()
+    });
+    saveLocalRecords(records);
+    return true;
+}
+
+function fallbackCheckout(id, returnTime, mileage, reason) {
+    const records = getLocalRecords();
+    const idx = records.findIndex(r => r.id === Number(id));
+    if (idx >= 0) {
+        records[idx].return_time = returnTime;
+        records[idx].mileage = mileage;
+        records[idx].reason = reason;
+        saveLocalRecords(records);
+        return true;
+    }
+    return false;
+}
+
+
+// ==================== 模式切换逻辑 ====================
+let currentMode = 'checkin';
+
+function setMode(mode) {
+    currentMode = mode;
+    const isCk = mode === 'checkin';
+    document.getElementById('modeTitle').textContent = isCk ? '公司车辆登记' : '车辆归还';
+    document.getElementById('modeSubtitle').textContent = isCk
+        ? '扫码填写信息，快速完成登记'
+        : '确认还车信息，完成归还登记';
+    document.getElementById('modeBadge').textContent = isCk ? '🚗 登车' : '🔑 还车';
+    document.getElementById('modeBadge').className = 'mode-badge ' + (isCk ? 'checkin' : 'checkout');
+    document.getElementById('labelTime').textContent = isCk ? '出车时间' : '还车时间';
+    document.getElementById('timeHint').textContent = isCk ? '实际开始用车的时间' : '实际归还车辆的时间';
+    document.getElementById('vehicleGroup').style.display = isCk ? '' : 'none';
+    document.getElementById('mileageGroup').style.display = isCk ? 'none' : '';
+    document.getElementById('inputMileage').value = '';
+    document.getElementById('reasonGroup').style.display = isCk ? 'none' : '';
+    document.getElementById('inputReason').value = '';
+    document.getElementById('submitBtn').textContent = isCk ? '确认登车' : '确认还车';
+    document.getElementById('submitBtn').className = 'submit-btn ' + (isCk ? 'checkin' : 'checkout');
+    document.getElementById('activeInfo').style.display = 'none';
+    setDefaultTime();
+}
+
+function setDefaultTime() {
+    const n = new Date();
+    const p = s => String(s).padStart(2, '0');
+    document.getElementById('inputTime').value =
+        `${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())}T${p(n.getHours())}:${p(n.getMinutes())}`;
+}
+
+// 姓名输入变化 → 自动检测是否需要还车
+document.getElementById('inputName').addEventListener('change', async function () {
+    const name = this.value.trim();
+    if (!name) { setMode('checkin'); return; }
+
+    this.disabled = true;
+    let active = null;
+
+    if (isCloudConnected) {
+        active = await queryActiveRecord(name);
+    } else {
+        active = getLocalActive(name);
+    }
+
+    this.disabled = false;
+
+    if (active) {
+        currentMode = 'checkout';
+        document.getElementById('modeTitle').textContent = '车辆归还';
+        document.getElementById('modeSubtitle').textContent = `检测到 ${name} 有未归还车辆`;
+        document.getElementById('modeBadge').textContent = '🔑 还车';
+        document.getElementById('modeBadge').className = 'mode-badge checkout';
+        document.getElementById('labelTime').textContent = '还车时间';
+        document.getElementById('timeHint').textContent = '实际归还车辆的时间';
+        document.getElementById('vehicleGroup').style.display = 'none';
+        document.getElementById('mileageGroup').style.display = '';
+        document.getElementById('reasonGroup').style.display = '';
+        document.getElementById('submitBtn').textContent = '确认还车';
+        document.getElementById('submitBtn').className = 'submit-btn checkout';
+
+        const infoEl = document.getElementById('activeInfo');
+        infoEl.style.display = 'block';
+        infoEl.innerHTML = `
+            <strong>${name}</strong> 正在使用 <strong>${active.vehicle_label || VEHICLES[active.vehicle]}</strong><br>
+            出车时间：<strong>${fmtDt(active.depart_time)}</strong>
+        `;
+        setDefaultTime();
+    } else {
+        setMode('checkin');
+    }
+});
+
+
+// ==================== 提交处理 ====================
+async function handleSubmit() {
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+
+    const name = document.getElementById('inputName').value.trim();
+    const vehicle = document.getElementById('selectVehicle').value;
+    const time = document.getElementById('inputTime').value;
+
+    if (!name) { alert('请填写司机姓名'); btn.disabled = false; return; }
+    if (currentMode === 'checkin' && !vehicle) { alert('请选择车辆'); btn.disabled = false; return; }
+    if (!time) { alert('请选择时间'); btn.disabled = false; return; }
+
+    try {
+        if (currentMode === 'checkin') {
+            // ===== 登车 =====
+            const ok = await insertCheckin({
+                driverName: name,
+                vehicle: vehicle,
+                vehicleLabel: VEHICLES[vehicle],
+                departTime: time,
+            });
+            if (ok) showModal('checkin', { driver_name: name, vehicle_label: VEHICLES[vehicle], depart_time: time });
+        } else {
+            // ===== 还车 =====
+            const mileageRaw = document.getElementById('inputMileage').value.trim();
+            if (!mileageRaw) { alert('请填写还车里程数'); btn.disabled = false; return; }
+            const mileage = parseInt(mileageRaw, 10);
+            if (isNaN(mileage) || mileage < 0) { alert('里程数需为有效的非负整数'); btn.disabled = false; return; }
+
+            const reason = document.getElementById('inputReason').value.trim();
+            if (!reason) { alert('请填写申请原因（目的地，如还车晚请附原因）'); btn.disabled = false; return; }
+
+            let targetId = null;
+            if (isCloudConnected) {
+                const rec = await queryActiveRecord(name);
+                if (rec) targetId = rec.id;
+            } else {
+                const localRec = getLocalActive(name);
+                if (localRec) targetId = localRec.id;
+            }
+            if (!targetId) { alert('未找到该司机的在用车辆记录'); btn.disabled = false; return; }
+
+            const ok = await updateCheckout(targetId, time, mileage, reason);
+            if (ok) showModal('checkout', { driver_name: name, vehicle_label: '', depart_time: '', return_time: time, mileage: mileage, reason: reason });
+        }
+    } catch (e) {
+        alert('操作失败: ' + e.message);
+    }
+
+    btn.disabled = false;
+}
+
+
+// ==================== 弹窗 ====================
+function showModal(mode, record) {
+    const ck = mode === 'checkin';
+    document.getElementById('modalIcon').innerHTML = ck ? '&#9989;' : '&#128737;';
+    document.getElementById('modalTitle').textContent = ck ? '登车成功！' : '还车成功！';
+    document.getElementById('modalMsg').textContent = ck
+        ? '请安全驾驶，注意行车规范。'
+        : '感谢配合，已更新用车记录。';
+
+    let html = '';
+    if (ck) {
+        html = `<span>司机：</span>${record.driver_name}<br>` +
+               `<span>车辆：</span>${record.vehicle_label}<br>` +
+               `<span>出车时间：</span>${fmtDt(record.depart_time)}`;
+    } else {
+        html = `<span>司机：</span>${record.driver_name}<br>` +
+               `<span>还车时间：</span>${fmtDt(record.return_time)}<br>` +
+               `<span>里程数：</span>${record.mileage != null ? record.mileage + ' km' : '-'}<br>` +
+               `<span>申请原因：</span>${record.reason ? record.reason : '-'}`;
+    }
+    document.getElementById('modalDetail').innerHTML = html;
+    document.getElementById('successModal').classList.add('show');
+
+    setTimeout(() => {
+        document.getElementById('inputName').value = '';
+        document.getElementById('selectVehicle').value = '';
+        setDefaultTime(); setMode('checkin');
+        refreshStats(); // 更新统计
+    }, 400);
+}
+
+function closeModal() { document.getElementById('successModal').classList.remove('show'); }
+
+
+// ==================== 管理面板 ====================
+function openAdmin() {
+    document.getElementById('adminPanel').classList.add('show');
+    generateQR(); renderRecords(); refreshStats();
+}
+function closeAdmin() { document.getElementById('adminPanel').classList.remove('show'); }
+
+function generateQR() {
+    const url = location.href;
+    const container = document.getElementById('qrCodeArea');
+    container.innerHTML = '<canvas id="qc" title="' + url + '"></canvas>';
+    QRCode.toCanvas(document.getElementById('qc'), url, {
+        width: 220, margin: 2,
+        color: { dark: '#121212', light: '#ffffff' },
+        errorCorrectionLevel: 'M'
+    }, function(err) {
+        if (err) container.innerHTML = '<p style="color:#f55;">生成失败</p>';
+    });
+    const hint = document.createElement('div');
+    hint.className = 'qr-hint';
+    hint.textContent = '司机扫描此二维码 → 打开登记页面';
+    container.appendChild(hint);
+    const urlDiv = document.createElement('div');
+    urlDiv.className = 'url-display';
+    urlDiv.textContent = url;
+    container.appendChild(urlDiv);
+}
+
+async function renderRecords() {
+    const listEl = document.getElementById('recordList');
+    listEl.innerHTML = '<div class="empty-tip">加载中...</div>';
+
+    const list = await fetchAllRecords();
+
+    if (!list || list.length === 0) {
+        listEl.innerHTML = '<div class="empty-tip">暂无用车记录</div>';
+        return;
+    }
+
+    listEl.innerHTML = list.map(r => {
+        const active = !r.return_time;
+        const sc = active ? 'status-active' : 'status-done';
+        const txt = active ? '行驶中' : '已归还';
+        const vl = r.vehicle_label || VEHICLES[r.vehicle] || r.vehicle;
+        let info = `<span>车辆：</span>${vl} &nbsp;|&nbsp; <span>出车：</span>${fmtDt(r.depart_time)}`;
+        if (r.return_time) {
+            info += `<br><span>还车：</span>${fmtDt(r.return_time)}`;
+            if (r.mileage != null) info += ` &nbsp;|&nbsp; <span>里程：</span>${r.mileage} km`;
+            if (r.reason) info += `<br><span>原因：</span>${r.reason}`;
+        }
+
+        return `<div class="record-item">
+            <div class="record-row">
+                <span class="record-driver">${r.driver_name}</span>
+                <span class="record-status ${sc}">${txt}</span>
+            </div>
+            <div class="record-info">${info}</div>
+        </div>`;
+    }).join('');
+}
+
+async function refreshStats() {
+    const list = await fetchAllRecords();
+    const total = list.length;
+    const active = list.filter(r => !r.return_time).length;
+    document.getElementById('statTotal').textContent = total;
+    document.getElementById('statActive').textContent = active;
+    document.getElementById('statDone').textContent = total - active;
+}
+function refreshRecords() { renderRecords(); refreshStats(); }
+
+function exportData() {
+    fetchAllRecords().then(data => {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `车辆登记_${new Date().toLocaleDateString('zh-CN').replace(/\//g,'-')}.json`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+    });
+}
+
+// 工具函数
+function fmtDt(s) {
+    if (!s) return '-';
+    const d = new Date(s);
+    const p = n => String(n).padStart(2,'0');
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// 配置弹窗
+function openConfig() {
+    const url = prompt(
+        '请输入你的 Supabase Project URL:\n' +
+        '(在 supabase.com → Settings → API 中复制)',
+        ''
+    );
+    if (!url) return;
+    const key = prompt(
+        '请输入 Supabase anon public key:\n' +
+        '(同一页面下方)',
+        ''
+    );
+    if (!key) return;
+    alert('配置已获取！\n\n接下来你需要:\n' +
+          '1. 打开本文件，把 SUPABASE_URL / SUPABASE_KEY 常量替换为上面的值\n' +
+          '2. 在 Supabase SQL Editor 中运行建表 SQL\n' +
+          '3. 重新部署页面即可');
+}
+
+
+// ==================== 启动 ====================
+initSupabase();
+</script>
+
+
+<!--
+=====================================================================
+                    📋 Supabase 建表 SQL
+=====================================================================
+
+打开 Supabase Dashboard → 你的项目 → SQL Editor，
+粘贴以下全部内容并执行：
+
+-- ============================================================
+-- 公司车辆使用登记表
+-- ============================================================
+
+create table vehicle_records (
+  id bigserial primary key,
+  driver_name text not null,           -- 司机姓名
+  vehicle text not null,               -- 车辆ID (car1/car2)
+  vehicle_label text not null,         -- 车辆显示名称
+  depart_time timestamptz not null,    -- 出车时间
+  return_time timestamptz,             -- 还车时间（null 表示行驶中）
+  mileage integer,                     -- 还车里程数（km，null 表示未填写）
+  reason text,                         -- 申请原因（目的地/晚还原因，null 表示未填写）
+  created_at timestamptz default now() -- 记录创建时间
+);
+
+-- 开启行级安全策略 (RLS)，允许任何人读取和插入
+alter table vehicle_records enable row level security;
+
+-- 允许所有人查看所有记录（匿名可读）
+create policy "允许匿名读取" on vehicle_records
+  for select using (true);
+
+-- 允许所有人插入新记录（匿名可写）
+create policy "允许匿名写入" on vehicle_records
+  for insert with check (true);
+
+-- 允许所有人更新已有记录（用于还车）
+create policy "允许匿名更新" on vehicle_records
+  for update using (true) with check (true);
+
+-- 可选：按出车时间建立索引以加速查询
+create index idx_vehicle_depart on vehicle_records (depart_time desc);
+create index idx_vehicle_active on vehicle_records (driver_name, return_time) where return_time is null;
+
+-- ============================================================
+-- 执行完毕后，回到 Settings → API 复制 URL 和 anon key，
+-- 填入上方 JavaScript 中的常量即可。
+-- ============================================================
+-->
+</body>
+</html>
