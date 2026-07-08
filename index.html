@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>公司车辆使用登记</title>
-    <!-- Supabase JS Client (CDN) -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- QR Code -->
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
     <style>
@@ -435,44 +433,39 @@ const VEHICLES = { car1: '🚗 1号车（轿车）', car2: '🚐 2号车（商�
 // 以上是唯一需要修改的地方，其余无需改动
 // ====================================================================
 
-let supabase = null;
 let isCloudConnected = false;
 
 // ==================== Supabase 连接 ====================
+const API_HEADERS = {
+    'apikey': SUPABASE_KEY,
+    'Authorization': `Bearer ${SUPABASE_KEY}`,
+    'Content-Type': 'application/json'
+};
+
 async function initSupabase() {
-    const loadingBar = document.getElementById('loadingBar');
-    const errorBar = document.getElementById('errorBar');
     const connStatus = document.getElementById('connStatus');
 
     if (!SUPABASE_URL || !SUPABASE_KEY) {
-        // 未配置：纯本地模式
         document.getElementById('configBanner').style.display = 'block';
         finishInit();
         return;
     }
 
     try {
-        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
-        // 测试连接：尝试查询一条记录
-        const { data, error } = await supabase
-            .from(TABLE_NAME)
-            .select('id')
-            .limit(1);
-
-        // 如果表不存在会报错（42P01），这是正常的首次使用场景
-        if (error && !error.code?.startsWith('PGRST') && !error.message?.includes('relation')) {
-            throw error;
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?select=id&limit=1`, {
+            method: 'GET',
+            headers: API_HEADERS
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(`HTTP ${res.status}: ${err.message || '请求失败'}`);
         }
 
-        // 连接成功（或表尚空）
         isCloudConnected = true;
         connStatus.className = 'conn-status connected';
         connStatus.innerHTML = '<span class="conn-dot"></span>云端已连接';
-
         document.getElementById('adminConnStatus').className = 'conn-status connected';
         document.getElementById('adminConnStatus').innerHTML = '<span class="conn-dot"></span>';
-
     } catch (err) {
         console.error('Supabase 连接失败:', err);
         isCloudConnected = false;
@@ -503,64 +496,81 @@ function showError(msg) {
 
 /** 从云端查询司机是否有未归还的车辆 */
 async function queryActiveRecord(driverName) {
-    if (!supabase || !isCloudConnected || !driverName) return null;
-    const { data, error } = await supabase
-        .from(TABLE_NAME)
-        .select('*')
-        .eq('driver_name', driverName)
-        .is('return_time', null)
-        .order('depart_time', { ascending: false })
-        .limit(1);
-
-    return error ? null : (data && data.length > 0 ? data[0] : null);
+    if (!isCloudConnected || !driverName) return null;
+    try {
+        const params = new URLSearchParams();
+        params.set('select', '*');
+        params.set('driver_name', `eq.${driverName}`);
+        params.set('return_time', 'is.null');
+        params.set('order', 'depart_time.desc');
+        params.set('limit', '1');
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?${params.toString()}`, {
+            headers: API_HEADERS
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        return data && data.length > 0 ? data[0] : null;
+    } catch (e) { return null; }
 }
 
 /** 插入登车记录 */
 async function insertCheckin(record) {
-    if (!supabase || !isCloudConnected) return fallbackSave(record);
-
-    const { data, error } = await supabase
-        .from(TABLE_NAME)
-        .insert({
-            driver_name: record.driverName,
-            vehicle: record.vehicle,
-            vehicle_label: record.vehicleLabel,
-            depart_time: record.departTime,
-        })
-        .select();
-
-    if (error) {
-        alert('云端写入失败: ' + error.message);
+    if (!isCloudConnected) return fallbackSave(record);
+    try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}`, {
+            method: 'POST',
+            headers: {
+                ...API_HEADERS,
+                'Prefer': 'return=representation'
+            },
+            body: JSON.stringify({
+                driver_name: record.driverName,
+                vehicle: record.vehicle,
+                vehicle_label: record.vehicleLabel,
+                depart_time: record.departTime
+            })
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            alert('云端写入失败: ' + (err.message || `HTTP ${res.status}`));
+            return false;
+        }
+        return true;
+    } catch (e) {
+        alert('网络错误: ' + e.message);
         return false;
     }
-    return true;
 }
 
 /** 更新还车时间 */
 async function updateCheckout(id, returnTime) {
-    if (!supabase || !isCloudConnected) return fallbackCheckout(id, returnTime);
-
-    const { error } = await supabase
-        .from(TABLE_NAME)
-        .update({ return_time: returnTime })
-        .eq('id', id);
-
-    return !error;
+    if (!isCloudConnected) return fallbackCheckout(id, returnTime);
+    try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?id=eq.${id}`, {
+            method: 'PATCH',
+            headers: {
+                ...API_HEADERS,
+                'Prefer': 'return=minimal'
+            },
+            body: JSON.stringify({ return_time: returnTime })
+        });
+        return res.ok;
+    } catch (e) { return false; }
 }
 
 /** 从云端获取所有记录 */
 async function fetchAllRecords() {
-    if (!supabase || !isCloudConnected) {
-        // 降级到本地存储
+    if (!isCloudConnected) {
         return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
     }
-
-    const { data, error } = await supabase
-        .from(TABLE_NAME)
-        .select('*')
-        .order('created_at', { ascending: false });
-
-    return error ? [] : (data || []);
+    try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE_NAME}?select=*&order=created_at.desc`, {
+            headers: API_HEADERS
+        });
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data || [];
+    } catch (e) { return []; }
 }
 
 const STORAGE_KEY = 'company_vehicle_records_local'; // 本地降级用
